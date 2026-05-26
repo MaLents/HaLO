@@ -35,6 +35,7 @@ dependencies = [
 
 [project.urls]
 Dataset = "https://huggingface.co/datasets/MarcoLents/HaLO"
+Repository = "https://github.com/MaLents/HaLO"
 
 [build-system]
 requires = ["setuptools>=68.0"]
