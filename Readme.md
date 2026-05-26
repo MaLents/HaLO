@@ -12,12 +12,6 @@ Dataset: [MarcoLents/HaLO on HuggingFace](https://huggingface.co/datasets/MarcoL
 ## Installation
 
 ```bash
-pip install halo-legibility
-```
-
-Or install from source:
-
-```bash
 pip install .
 ```
 
