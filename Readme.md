@@ -17,14 +17,6 @@ pip install .
 
 Feature files are downloaded automatically from HuggingFace when running the scripts.
 
-If you want to use a GPU for the bootstrap sampling, you will have to install a cude compatible version of jax using
-
-```bash
-pip install "jax[cuda12]"
-```
-
-Make sure you choose the correct cuda version in this command.
-
 ## Model architectures
 
 All models are regression heads on frozen 1024-dimensional Pixtral-ViT embeddings. They predict a scalar legibility score per sample and compare pairs via `sigmoid(score1 - score2)`.
@@ -112,3 +104,7 @@ The `halo_legibility` package provides:
 ## License
 
 [MIT](LICENSE)
+
+## Troubleshooting
+
+If your bootstrap analysis is taking a long time to complete make sure you have g++ installed.
