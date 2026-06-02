@@ -1,4 +1,5 @@
 import itertools
+from math import floor
 import numpy as np
 import pandas as pd
 import krippendorff
@@ -12,18 +13,36 @@ from halo_legibility.loader import score_images
 from halo_legibility.utils import parse_model_name, discover_models
 
 
-def fractions_to_counts(fractions, n):
-    """Convert rating fractions to integer counts summing to n (largest remainder)."""
-    scale = sorted(fractions)
-    raw = {r: fractions[r] * n for r in scale}
-    counts = {r: int(v) for r, v in raw.items()}
-    remainder = n - sum(counts.values())
-    for r in sorted(scale, key=lambda r: raw[r] - counts[r], reverse=True)[:remainder]:
-        counts[r] += 1
-    return counts
+def get_fractions(ann_table, annotator_cols):
+    # Compute average rating fractions across annotators for val set
+    scale = list(range(5))
+    ann_counts = {i: 0 for i in scale}
+    total_counts = 0
+    for col in annotator_cols:
+        ratings = list(ann_table[col].values())
+        if ratings:
+            for r in scale:
+                ann_counts[r] += ratings.count(r)
+            total_counts += len(ratings)
+    fractions = {r: ann_counts[r] / total_counts for r in scale}
+    
+    return fractions
+
+def get_thresholds(scores, fractions):
+    sorted_scores = sorted(scores.values(), reverse=True)
+
+    thresholds = []
+
+    cumm = 0.0
+    for r in range(4):
+        cumm += fractions[r]
+        idx = floor(cumm * len(sorted_scores))
+        thresholds.append((sorted_scores[idx] + sorted_scores[idx+1]) / 2)
+
+    return thresholds
 
 
-def map_scores_to_ratings(scores_dict, annotator_ratings, fractions=None):
+def map_scores_to_ratings(scores_dict, thresholds):
     """
     Map model scores to discrete ratings.
 
@@ -34,24 +53,12 @@ def map_scores_to_ratings(scores_dict, annotator_ratings, fractions=None):
     annotator_ratings: {sample_id: rating}  (lower = better)
     Returns: {sample_id: predicted_rating}
     """
-    common_ids = [id_ for id_ in annotator_ratings if id_ in scores_dict]
-    if fractions is not None:
-        counts = fractions_to_counts(fractions, len(common_ids))
-        scale = sorted(fractions)
-    else:
-        ratings = [annotator_ratings[id_] for id_ in common_ids]
-        scale = sorted(set(ratings))
-        counts = {r: ratings.count(r) for r in scale}
+    out = {}
 
-    sorted_ids = sorted(common_ids, key=lambda id_: scores_dict[id_], reverse=True)
+    for sample_id, score in scores_dict.items():
+        out[sample_id] = len([t for t in thresholds if t > score])
 
-    result = {}
-    pos = 0
-    for r in scale:
-        for _ in range(counts[r]):
-            result[sorted_ids[pos]] = r
-            pos += 1
-    return result
+    return out
 
 
 def main():
@@ -96,36 +103,50 @@ def main():
             print(f"  {col_a} vs {col_b}: {alpha_pair:.4f}")
 
     # --- Test-set analysis (Table 5) ---
-    df_test = pd.DataFrame(load_dataset("MarcoLents/HaLO", "absolute_test")["train"])
-    annotator_cols_test = ["annotator8", "annotator9", "annotator10", "annotator11"]
+    df_test = pd.DataFrame(load_dataset("MarcoLents/HaLO", "absolute")["test"])
+    annotator_cols_main = ["annotator8", "annotator9", "annotator10", "annotator11"]
+
+    # --- Val-set analysis ---
+    df_val = pd.DataFrame(load_dataset("MarcoLents/HaLO", "absolute")["validation"])
 
     sample_ids = df_test["sampleId"].tolist()
+    val_ids = df_val["sampleId"].tolist()
 
     # Build {annotator: {sample_id: rating}} for non-NaN entries
-    ann_ratings_map = {}
-    for col in annotator_cols_test:
-        ann_ratings_map[col] = {
+    ann_ratings_map_test = {}
+    for col in annotator_cols_main:
+        ann_ratings_map_test[col] = {
             row["sampleId"]: int(row[col])
             for _, row in df_test.iterrows()
             if pd.notna(row[col])
         }
 
-    ann_counts = {col: len(v) for col, v in ann_ratings_map.items()}
+    # Build {annotator: {sample_id: rating}} for non-NaN entries
+    ann_ratings_map_val = {}
+    for col in annotator_cols_main:
+        ann_ratings_map_val[col] = {
+            row["sampleId"]: int(row[col])
+            for _, row in df_val.iterrows()
+            if pd.notna(row[col])
+        }
+
+    ann_counts = {col: len(v) for col, v in ann_ratings_map_test.items()}
+    ann_counts_val = {col: len(v) for col, v in ann_ratings_map_val.items()}
 
     # Reliability matrix
-    rating_matrix = np.full((len(annotator_cols_test), len(sample_ids)), np.nan)
-    for i, col in enumerate(annotator_cols_test):
+    rating_matrix = np.full((len(annotator_cols_main), len(sample_ids)), np.nan)
+    for i, col in enumerate(annotator_cols_main):
         for j, sid in enumerate(sample_ids):
-            if sid in ann_ratings_map[col]:
-                rating_matrix[i, j] = ann_ratings_map[col][sid]
+            if sid in ann_ratings_map_test[col]:
+                rating_matrix[i, j] = ann_ratings_map_test[col][sid]
 
     # Pairwise annotator alphas
     print("\nKrippendorff's alpha (test set, Table 5)")
     Path("results/main-study").mkdir(parents=True, exist_ok=True)
     with open("results/main-study/alphas_test.csv", "w") as alpha_file:
-        alpha_file.write("Annotator1, Annotator2, alpha")
-        for i, col_a in enumerate(annotator_cols_test):
-            for j, col_b in enumerate(annotator_cols_test):
+        alpha_file.write("Annotator1, Annotator2, alpha, N")
+        for i, col_a in enumerate(annotator_cols_main):
+            for j, col_b in enumerate(annotator_cols_main):
                 if j <= i:
                     continue
                 pair = rating_matrix[[i, j], :]
@@ -134,8 +155,9 @@ def main():
                     reliability_data=pair[:, mask],
                     level_of_measurement="ordinal",
                 )
-                alpha_file.write(f"\n{col_a}, {col_b}, {alpha}")
-                print(f"  {col_a} vs {col_b}: {alpha:.4f} (n={int(mask.sum())})")
+                n = int(mask.sum())
+                alpha_file.write(f"\n{col_a}, {col_b}, {alpha}, {n}")
+                print(f"  {col_a} vs {col_b}: {alpha:.4f} (N={n})")
 
     if args.no_ml:
         print("Skipping analysis of machine-learning models")
@@ -144,15 +166,9 @@ def main():
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
     feat_dir = f"{args.data_dir}/features"
     id_to_path = dict(zip(df_test["sampleId"], df_test["samplePath"]))
+    id_to_path_val = dict(zip(df_val["sampleId"], df_val["samplePath"]))
 
-    # Compute average rating fractions across annotators
-    scale = list(range(5))
-    ann_fracs = []
-    for col in annotator_cols_test:
-        ratings = list(ann_ratings_map[col].values())
-        if ratings:
-            ann_fracs.append({r: ratings.count(r) / len(ratings) for r in scale})
-    avg_fractions = {r: np.mean([f[r] for f in ann_fracs]) for r in scale}
+    val_fracs = get_fractions(ann_ratings_map_val, annotator_cols_main)
 
     # Score test images with the linear probe (m0)
     m0_name = next(n for n in discover_models(args.models_dir) if n.startswith("m0_"))
@@ -160,21 +176,26 @@ def main():
     model = load_model(m0_name, arch, dropout, args.models_dir).to(device)
     scores_dict = score_images(model, feat_dir, id_to_path, device)
 
+    val_scores_dict = score_images(model, feat_dir, id_to_path_val, device)
+
+    val_thres = get_thresholds(val_scores_dict, val_fracs)
+
     print("\nKrippendorff's alpha: annotators vs linear probe (test set)")
     with open("results/main-study/alphas_test_ml.csv", "w") as alpha_file:
-        alpha_file.write("Annotator, alpha")
-        for col in annotator_cols_test:
-            predicted = map_scores_to_ratings(scores_dict, ann_ratings_map[col], fractions=avg_fractions)
-            common_ids = sorted(predicted.keys())
+        alpha_file.write("Annotator, alpha, N")
+        for col in annotator_cols_main:
+            predicted = map_scores_to_ratings(scores_dict, val_thres)
+            common_ids = list(filter(lambda k: k in ann_ratings_map_test[col].keys(), sorted(predicted.keys())))
             pred_array = np.array([predicted[id_] for id_ in common_ids])
-            true_array = np.array([ann_ratings_map[col][id_] for id_ in common_ids])
+            true_array = np.array([ann_ratings_map_test[col][id_] for id_ in common_ids])
 
             alpha = krippendorff.alpha(
                 reliability_data=np.array([pred_array, true_array]),
                 level_of_measurement="ordinal",
             )
-            alpha_file.write(f"\n{col}, {alpha}")
-            print(f"  {col} vs linear probe: {alpha:.4f}")
+            n = len(common_ids)
+            alpha_file.write(f"\n{col}, {alpha}, {n}")
+            print(f"  {col} vs linear probe: {alpha:.4f} (N={n})")
 
 
 if __name__ == "__main__":
