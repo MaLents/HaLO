@@ -3,10 +3,11 @@ from huggingface_hub import snapshot_download
 from argparse import ArgumentParser
 from torch.utils.data import DataLoader
 import torch
+from torch.nn import CrossEntropyLoss
 import numpy as np
 import random
 from torch import optim
-from halo_legibility.train import train
+from halo_legibility.train import train, evaluate_model
 from halo_legibility.model import build_model
 from halo_legibility.loader import HaLOPixtralFeatures
 
@@ -27,6 +28,7 @@ def main():
     parser.add_argument('-l', '--learning-rate', type=float, default=1e-3)
     parser.add_argument('-p', '--patience', default=100, type=int)
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--out', type=str, default="results/ml-models")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -63,6 +65,7 @@ def main():
     dataset = load_dataset("MarcoLents/HaLO")
     train_loader = DataLoader(HaLOPixtralFeatures(dataset["train"], feat_dir), batch_size=args.batch_size, shuffle=True, generator=g)
     val_loader = DataLoader(HaLOPixtralFeatures(dataset["validation"], feat_dir), batch_size=args.batch_size)
+    test_loader = DataLoader(HaLOPixtralFeatures(dataset["test"], feat_dir), batch_size=args.batch_size)
     
     if args.optimizer.lower() == "adam":
         optimizer = optim.AdamW(model.parameters(), weight_decay=args.weight_decay, lr=args.learning_rate)
@@ -72,6 +75,19 @@ def main():
         ValueError(f"Unknown optimizer: {args.optimizer} possible values are 'Adam' and 'SGD'")
 
     train(name, model, args.epochs, train_loader, val_loader, device, optimizer=optimizer, patience=args.patience)
+
+    print("Training complete! Evaluating model")
+
+    criterion = CrossEntropyLoss()
+
+    _, train_auc, train_acc = evaluate_model(model, train_loader, criterion, device)
+    _, val_auc, val_acc = evaluate_model(model, val_loader, criterion, device)
+    _, test_auc, test_acc = evaluate_model(model, test_loader, criterion, device)
+
+    with open(f"{args.out}/perf_{name}.csv", "w") as out_file:
+        out_file.write("set, ACC, AUC\n")
+        for s, acc, auc in zip(["train", "val", "test"], [train_acc, val_acc, test_acc], [train_auc, val_auc, test_auc]):
+            out_file.write(f"{s}, {acc}, {auc}\n")
         
         
 if __name__ == "__main__":
