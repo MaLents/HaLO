@@ -32,6 +32,7 @@ dependencies = [
     "huggingface_hub>=0.17",
     "krippendorff>=0.6",
     "statsmodels>=0.14",
+    "seaborn>=0.12",
 ]
 
 [project.urls]

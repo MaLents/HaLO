@@ -79,7 +79,7 @@ def main():
 
     all_ratings = df_pre[annotator_cols_pre].apply(pd.to_numeric, errors="raise").to_numpy().T
 
-    print("Krippendorff's alpha (pre-study)")
+    print(f"Krippendorff's alpha (pre-study, N={len(df_pre)})")
     Path("results/pre-study").mkdir(parents=True, exist_ok=True)
     with open("results/pre-study/alphas.csv", "w") as alpha_file:
         alpha_file.write("Annotators, alpha")
