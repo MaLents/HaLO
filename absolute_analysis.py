@@ -73,38 +73,9 @@ def main():
 
     args = parser.parse_args()
 
-    # --- Pre-study analysis (Table 3) ---
-    df_pre = pd.DataFrame(load_dataset("MarcoLents/HaLO", "absolute_pre_study")["train"])
-    annotator_cols_pre = ["annotator41", "annotator42", "annotator5", "annotator6", "annotator7"]
-
-    all_ratings = df_pre[annotator_cols_pre].apply(pd.to_numeric, errors="raise").to_numpy().T
-
-    print(f"Krippendorff's alpha (pre-study, N={len(df_pre)})")
-    Path("results/pre-study").mkdir(parents=True, exist_ok=True)
-    with open("results/pre-study/alphas.csv", "w") as alpha_file:
-        alpha_file.write("Annotators, alpha")
-
-        alpha_all = krippendorff.alpha(
-            reliability_data=all_ratings,
-            level_of_measurement="ordinal",
-        )
-
-        alpha_file.write(f"\nAll, {alpha_all}")
-        print(f"  All: {alpha_all:.4f}")
-
-        for col_a, col_b in itertools.combinations(annotator_cols_pre, 2):
-            pair_ratings = df_pre[[col_a, col_b]].apply(pd.to_numeric, errors="raise").to_numpy().T
-            alpha_pair = krippendorff.alpha(
-                reliability_data=pair_ratings,
-                level_of_measurement="ordinal",
-            )
-
-            alpha_file.write(f"\n{col_a}-{col_b}, {alpha_pair}")
-            print(f"  {col_a} vs {col_b}: {alpha_pair:.4f}")
-
     # --- Test-set analysis (Table 5) ---
     df_test = pd.DataFrame(load_dataset("MarcoLents/HaLO", "absolute")["test"])
-    annotator_cols_main = ["annotator8", "annotator9", "annotator10", "annotator11"]
+    annotator_cols_main = ["A1", "A2", "A3", "A4"]
 
     # --- Val-set analysis ---
     df_val = pd.DataFrame(load_dataset("MarcoLents/HaLO", "absolute")["validation"])
