@@ -73,7 +73,7 @@ def main():
 
     args = parser.parse_args()
 
-    # --- Test-set analysis (Table 5) ---
+    # --- Absolute annotation analysis (Table 3) ---
     df_test = pd.DataFrame(load_dataset("MarcoLents/HaLO", "absolute")["test"])
     annotator_cols_main = ["A1", "A2", "A3", "A4"]
 
@@ -112,7 +112,7 @@ def main():
                 rating_matrix[i, j] = ann_ratings_map_test[col][sid]
 
     # Pairwise annotator alphas
-    print("\nKrippendorff's alpha (test set, Table 5)")
+    print("\nKrippendorff's alpha (test set, Table 3)")
     Path("results/main-study").mkdir(parents=True, exist_ok=True)
     with open("results/main-study/alphas_test.csv", "w") as alpha_file:
         alpha_file.write("Annotator1, Annotator2, alpha, N")

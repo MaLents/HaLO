@@ -101,7 +101,7 @@ def main():
     print("Main study bootstrap analysis")
     Path(f"{args.out_directory}/main-study").mkdir(parents=True, exist_ok=True)
     with open(f"{args.out_directory}/main-study/performance.csv", "w") as main_file:
-        main_file.write("split, ACC, sigma(ACC), AUC, sigma(AUC), <simga(rank)>")
+        main_file.write("split, ACC, sigma(ACC), AUC, sigma(AUC), <sigma(rank)>")
         for key, split in main_annotations.items():
             Path(f"{args.out_directory}/main-study/{key}").mkdir(parents=True, exist_ok=True)
             print(f"  Fitting [{key}] ({args.resamples} resamples)...", flush=True)
